@@ -96,3 +96,44 @@ test('cancelling a picked backup changes nothing', async () => {
   expect(screen.queryByRole('button', { name: '이 백업으로 바꾸기' })).not.toBeInTheDocument();
   expect((await s.getActivePersona())!.name).toBe('철수');
 });
+
+test('provider choice: switching to Google swaps the default model and clears the key field', async () => {
+  const user = userEvent.setup();
+  await s.saveSettings({ apiKey: 'ant-key', provider: 'anthropic', model: 'claude-x' });
+  render(<SettingsScreen />);
+  const provider = await screen.findByLabelText('AI 제공사');
+  expect(Array.from(provider.querySelectorAll('option')).map((o) => o.textContent)).toEqual([
+    'Anthropic (Claude)',
+    'Google (Gemini)',
+  ]);
+  expect(provider).toHaveValue('anthropic');
+  await user.selectOptions(provider, 'google');
+  expect(screen.getByLabelText('API 키')).toHaveValue('');
+  expect(screen.getByLabelText('모델')).toHaveValue('gemini-3.8-flash');
+  // nothing is stored until the user saves
+  expect((await s.getSettings()).provider).toBe('anthropic');
+});
+
+test('provider choice: saving a Google key persists it, and switching back restores the Anthropic key', async () => {
+  const user = userEvent.setup();
+  await s.saveSettings({ apiKey: 'ant-key', provider: 'anthropic', model: 'claude-x' });
+  const onSaved = vi.fn();
+  render(<SettingsScreen onSaved={onSaved} />);
+  await user.selectOptions(await screen.findByLabelText('AI 제공사'), 'google');
+  await user.type(screen.getByLabelText('API 키'), 'goo-key');
+  await user.click(screen.getByRole('button', { name: '저장' }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  expect(await s.getSettings()).toEqual({ apiKey: 'goo-key', provider: 'google', model: 'gemini-3.8-flash' });
+  await user.selectOptions(screen.getByLabelText('AI 제공사'), 'anthropic');
+  expect(screen.getByLabelText('API 키')).toHaveValue('ant-key');
+  expect(screen.getByLabelText('모델')).toHaveValue('claude-x');
+});
+
+test('an empty model name falls back to the chosen provider default', async () => {
+  const user = userEvent.setup();
+  render(<SettingsScreen />);
+  await user.selectOptions(await screen.findByLabelText('AI 제공사'), 'google');
+  await user.clear(screen.getByLabelText('모델'));
+  await user.click(screen.getByRole('button', { name: '저장' }));
+  await waitFor(async () => expect((await s.getSettings()).model).toBe('gemini-3.8-flash'));
+});

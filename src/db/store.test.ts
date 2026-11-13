@@ -99,3 +99,22 @@ test('summary save and get', async () => {
   await s.saveSummary(a.id, '요약');
   expect((await s.getSummary(a.id))!.text).toBe('요약');
 });
+
+test('each provider keeps its own key and model', async () => {
+  await s.saveSettings({ apiKey: 'ant-key', provider: 'anthropic', model: 'claude-x' });
+  await s.saveSettings({ apiKey: 'goo-key', provider: 'google', model: 'gemini-x' });
+  expect(await s.getSettings()).toEqual({ apiKey: 'goo-key', provider: 'google', model: 'gemini-x' });
+  expect(await s.getProviderSettings('anthropic')).toEqual({ apiKey: 'ant-key', model: 'claude-x' });
+  expect(await s.getProviderSettings('google')).toEqual({ apiKey: 'goo-key', model: 'gemini-x' });
+});
+
+test('a provider never saved gets an empty key and its own default model', async () => {
+  expect(await s.getProviderSettings('google')).toEqual({ apiKey: '', model: 'gemini-3.8-flash' });
+  expect(await s.getProviderSettings('anthropic')).toEqual({ apiKey: '', model: 'claude-sonnet-5-5' });
+});
+
+test('settings saved before providers existed still load', async () => {
+  await s.db.settings.put({ id: 'main', apiKey: 'old', provider: 'anthropic', model: 'm' } as never);
+  expect(await s.getSettings()).toEqual({ apiKey: 'old', provider: 'anthropic', model: 'm' });
+  expect(await s.getProviderSettings('anthropic')).toEqual({ apiKey: 'old', model: 'm' });
+});

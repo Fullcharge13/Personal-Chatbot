@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getSettings } from '../db/store';
-import { createAnthropicProvider } from '../llm/anthropic';
+import { createProvider } from '../llm';
 import type { LlmProvider } from '../llm/provider';
 import type { Settings } from '../types';
 import { ChatScreen } from './ChatScreen';
@@ -16,7 +16,7 @@ const TABS = [
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
 
-export function App({ llmFactory = createAnthropicProvider }: { llmFactory?: (s: Settings) => LlmProvider }) {
+export function App({ llmFactory = createProvider }: { llmFactory?: (s: Settings) => LlmProvider }) {
   const [tab, setTab] = useState<TabId>('chat');
   const [llm, setLlm] = useState<LlmProvider | null>(null);
   const [ready, setReady] = useState(false);

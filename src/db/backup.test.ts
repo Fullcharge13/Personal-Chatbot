@@ -34,7 +34,6 @@ test('round trip restores personas, memories, messages, threads, summaries, prof
   expect((await s.listMessages(p.id)).map((m) => m.text)).toEqual(['안녕']);
   expect((await s.getSummary(p.id))!.text).toBe('요약');
   expect((await s.getProfile())[2].text).toBe('등산');
-  expect((await s.getSettings()).model).toBe('my-model');
 });
 
 test('import replaces existing data rather than merging', async () => {
@@ -46,12 +45,22 @@ test('import replaces existing data rather than merging', async () => {
   expect(await s.db.personas.get(extra.id)).toBeUndefined();
 });
 
-test('import keeps the api key already on the device', async () => {
+test('import leaves the AI settings on the device untouched, for every provider', async () => {
   await seed();
   const json = await exportBackup();
-  await s.saveSettings({ apiKey: 'sk-device', provider: 'anthropic', model: 'other' });
+  await s.saveSettings({ apiKey: 'ant-device', provider: 'anthropic', model: 'other' });
+  await s.saveSettings({ apiKey: 'goo-device', provider: 'google', model: 'gemini-x' });
   await importBackup(json);
-  expect(await s.getSettings()).toEqual({ apiKey: 'sk-device', provider: 'anthropic', model: 'my-model' });
+  expect(await s.getSettings()).toEqual({ apiKey: 'goo-device', provider: 'google', model: 'gemini-x' });
+  expect(await s.getProviderSettings('anthropic')).toEqual({ apiKey: 'ant-device', model: 'other' });
+});
+
+test('export contains no key of any provider', async () => {
+  await s.saveSettings({ apiKey: 'ant-secret', provider: 'anthropic', model: 'm' });
+  await s.saveSettings({ apiKey: 'goo-secret', provider: 'google', model: 'g' });
+  const json = await exportBackup();
+  expect(json).not.toContain('ant-secret');
+  expect(json).not.toContain('goo-secret');
 });
 
 test.each([

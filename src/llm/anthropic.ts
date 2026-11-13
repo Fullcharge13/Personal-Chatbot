@@ -1,5 +1,6 @@
 import type { Settings } from '../types';
 import { LlmError, type LlmErrorKind, type LlmProvider, type LlmRequest } from './provider';
+import { parseJson, readSse } from './sse';
 
 const URL = 'https://api.anthropic.com/v1/messages';
 
@@ -64,39 +65,16 @@ export function createAnthropicProvider(
 
     async stream(req, onDelta) {
       const res = await send(req, true);
-      if (!res.body) throw new LlmError('other', '응답 본문이 없습니다');
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
       let full = '';
-      const handle = (line: string) => {
-        if (!line.startsWith('data:')) return;
-        try {
-          const ev = JSON.parse(line.slice(5).trim());
-          if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
-            full += ev.delta.text;
-            onDelta(ev.delta.text);
-          } else if (ev.type === 'error') {
-            throw new LlmError('other', ev.error?.message ?? '스트림 오류');
-          }
-        } catch (e) {
-          if (e instanceof LlmError) throw e;
+      await readSse(res, (data) => {
+        const ev = parseJson(data);
+        if (ev?.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
+          full += ev.delta.text;
+          onDelta(ev.delta.text);
+        } else if (ev?.type === 'error') {
+          throw new LlmError('other', ev.error?.message ?? '스트림 오류');
         }
-      };
-      try {
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() ?? '';
-          lines.forEach(handle);
-        }
-      } catch (e) {
-        if (e instanceof LlmError) throw e;
-        throw new LlmError('network', e instanceof Error ? e.message : '네트워크 오류');
-      }
-      if (buffer) handle(buffer);
+      });
       return full;
     },
   };

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { exportBackup, importBackup, inspectBackup } from '../db/backup';
-import { getSettings, saveSettings, wipeAll } from '../db/store';
-import { DEFAULT_MODEL } from '../types';
+import { getProviderSettings, getSettings, saveSettings, wipeAll } from '../db/store';
+import { DEFAULT_MODEL, DEFAULT_MODELS, PROVIDERS, type Provider } from '../types';
 import { readFileText } from './readFile';
 
 export function SettingsScreen({ onSaved }: { onSaved?: () => void }) {
+  const [provider, setProvider] = useState<Provider>('anthropic');
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [loaded, setLoaded] = useState(false);
@@ -14,6 +15,7 @@ export function SettingsScreen({ onSaved }: { onSaved?: () => void }) {
 
   useEffect(() => {
     getSettings().then((s) => {
+      setProvider(s.provider);
       setApiKey(s.apiKey);
       setModel(s.model);
       setLoaded(true);
@@ -22,9 +24,18 @@ export function SettingsScreen({ onSaved }: { onSaved?: () => void }) {
 
   if (!loaded) return null;
 
+  /** Shows what was last saved for the chosen provider. Nothing is stored until the user saves. */
+  async function switchProvider(next: Provider) {
+    const saved = await getProviderSettings(next);
+    setProvider(next);
+    setApiKey(saved.apiKey);
+    setModel(saved.model);
+    setNotice('');
+  }
+
   async function save() {
-    const next = model.trim() || DEFAULT_MODEL;
-    await saveSettings({ apiKey: apiKey.trim(), provider: 'anthropic', model: next });
+    const next = model.trim() || DEFAULT_MODELS[provider];
+    await saveSettings({ apiKey: apiKey.trim(), provider, model: next });
     setModel(next);
     setNotice('저장했습니다');
     onSaved?.();
@@ -57,8 +68,6 @@ export function SettingsScreen({ onSaved }: { onSaved?: () => void }) {
     if (!picked) return;
     try {
       await importBackup(picked.json);
-      const s = await getSettings();
-      setModel(s.model);
       setNotice('백업을 불러왔습니다');
       onSaved?.();
     } catch {
@@ -69,6 +78,7 @@ export function SettingsScreen({ onSaved }: { onSaved?: () => void }) {
 
   async function wipe() {
     await wipeAll();
+    setProvider('anthropic');
     setApiKey('');
     setModel(DEFAULT_MODEL);
     setConfirmText('');
@@ -81,6 +91,15 @@ export function SettingsScreen({ onSaved }: { onSaved?: () => void }) {
       <h1>설정</h1>
 
       <section className="card">
+        <label htmlFor="provider">AI 제공사</label>
+        <select id="provider" value={provider} onChange={(e) => void switchProvider(e.target.value as Provider)}>
+          {PROVIDERS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+        <p className="hint">제공사마다 키가 따로 필요하고, 각 제공사의 이용 정책이 적용됩니다.</p>
         <label htmlFor="api-key">API 키</label>
         <input
           id="api-key"
@@ -88,7 +107,7 @@ export function SettingsScreen({ onSaved }: { onSaved?: () => void }) {
           autoComplete="off"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
-          placeholder="sk-ant-..."
+          placeholder={PROVIDERS.find((p) => p.id === provider)?.keyHint}
         />
         <p className="hint">이 휴대폰에만 저장됩니다. 백업 파일에도 들어가지 않습니다.</p>
         <label htmlFor="model">모델</label>

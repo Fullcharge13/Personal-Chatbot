@@ -1,4 +1,3 @@
-import { DEFAULT_MODEL } from '../types';
 import { db, getSettings } from './store';
 
 const TABLES = ['personas', 'memories', 'threads', 'messages', 'summaries', 'profile'] as const;
@@ -44,19 +43,14 @@ export function inspectBackup(json: string): { exportedAt: string; personas: num
   };
 }
 
-/** Replaces all data with the backup. The API key already on the device is kept. */
+/** Replaces all data with the backup. The AI settings on the device (provider, keys, models) are left as they are. */
 export async function importBackup(json: string): Promise<void> {
   const data = parseBackup(json);
 
-  const current = await getSettings();
-  const backed = (data.settings ?? {}) as { model?: unknown };
-  const model = typeof backed.model === 'string' && backed.model ? backed.model : DEFAULT_MODEL;
-
-  await db.transaction('rw', db.tables, async () => {
+  await db.transaction('rw', TABLES.map((name) => db.table(name)), async () => {
     for (const name of TABLES) {
       await db.table(name).clear();
       await db.table(name).bulkAdd(data[name] as object[]);
     }
-    await db.table('settings').put({ id: 'main', apiKey: current.apiKey, provider: 'anthropic', model });
   });
 }
