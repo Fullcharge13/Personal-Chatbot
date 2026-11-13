@@ -6,6 +6,9 @@ import * as store from '../db/store';
 import { LlmError, type LlmProvider } from '../llm/provider';
 import { LIMITS, type ChatMessage, type Persona } from '../types';
 
+/** Bubbles rendered at once; older ones load on request so a long history stays smooth. */
+const PAGE = 200;
+
 interface Banner {
   text: string;
   toSettings?: boolean;
@@ -41,6 +44,7 @@ export function ChatScreen({
   const [streaming, setStreaming] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<Banner | null>(null);
+  const [shown, setShown] = useState(PAGE);
   const endRef = useRef<HTMLDivElement>(null);
 
   // Load, then tidy up the previous conversation and let the persona speak first if it has been a while.
@@ -161,7 +165,12 @@ export function ChatScreen({
       </header>
 
       <div className="log">
-        {messages.map((m) => (
+        {messages.length > shown && (
+          <button className="older" onClick={() => setShown((n) => n + PAGE)}>
+            이전 대화 더 보기
+          </button>
+        )}
+        {messages.slice(-shown).map((m) => (
           <div key={m.id} style={{ display: 'contents' }}>
             <div className={`bubble ${m.sender}${m.failed ? ' failed' : ''}`}>{m.text}</div>
             {m.failed && (

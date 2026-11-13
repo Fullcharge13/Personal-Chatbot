@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { addMemories, createPersona, updatePersona } from '../db/store';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { saveImport } from '../db/store';
 import { chunkMessages, extractPersona, type ExtractionOutput, type ExtractionState } from '../import/extractor';
 import { filterByPeriod, listSenders, parseChatExport, type ChatFormat, type Period } from '../import/parsers';
 import { LlmError, type LlmProvider } from '../llm/provider';
@@ -30,12 +30,15 @@ export function ImportWizard({
   llm,
   target,
   onDone,
+  onBusyChange,
   now = Date.now,
 }: {
   llm: LlmProvider | null;
   /** The persona to merge into, or null to create a new one. */
   target: Persona | null;
   onDone: () => void;
+  /** True while an extraction is running or its unsaved draft is on screen. */
+  onBusyChange?: (busy: boolean) => void;
   now?: () => number;
 }) {
   const [step, setStep] = useState<Step>('file');
@@ -50,7 +53,19 @@ export function ImportWizard({
   const [output, setOutput] = useState<ExtractionOutput | null>(null);
   const [draft, setDraft] = useState<PersonaSheet | null>(null);
   const [choices, setChoices] = useState<Partial<Record<keyof PersonaSheet, Choice>>>({});
+  const [saving, setSaving] = useState(false);
   const resumeState = useRef<ExtractionState | undefined>(undefined);
+
+  const busy = step === 'run' || step === 'review';
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
+  useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
+
+  function close() {
+    onBusyChange?.(false);
+    onDone();
+  }
 
   const senders = useMemo(() => listSenders(messages), [messages]);
   const chunks = useMemo(
@@ -135,17 +150,28 @@ export function ImportWizard({
       setError('이름을 넣어주세요');
       return;
     }
-    const memories = output.memories.map((m) => ({ ...m, source: 'import' as const }));
-    if (target) {
-      const samples = [...new Set([...output.speechSamples, ...target.speechSamples])].slice(0, LIMITS.speechSamples);
-      await updatePersona(target.id, { ...draft, speechSamples: samples });
-      if (memories.length) await addMemories(target.id, memories);
-    } else {
-      const created = await createPersona(draft, output.speechSamples);
-      if (memories.length) await addMemories(created.id, memories);
+    if (saving) return;
+    setSaving(true);
+    setError('');
+    try {
+      await saveImport({
+        targetId: target?.id ?? null,
+        sheet: draft,
+        speechSamples: target
+          ? [...new Set([...output.speechSamples, ...target.speechSamples])].slice(0, LIMITS.speechSamples)
+          : output.speechSamples,
+        memories: output.memories.map((m) => ({ ...m, source: 'import' as const })),
+      });
+    } catch (e) {
+      const err = e as { name?: string; inner?: { name?: string } } | null;
+      const quota = err?.name === 'QuotaExceededError' || err?.inner?.name === 'QuotaExceededError';
+      setError(quota ? '저장 공간이 부족합니다. 설정에서 백업을 내보내주세요' : '저장하지 못했습니다. 다시 눌러주세요');
+      return;
+    } finally {
+      setSaving(false);
     }
     if (reminderAlreadyShown()) {
-      onDone();
+      close();
       return;
     }
     try {
@@ -227,6 +253,11 @@ export function ImportWizard({
               {chars.toLocaleString()}자). 구간이 많을수록 시간과 AI 사용료가 늘어납니다.
             </p>
           )}
+          {chunks.length > 30 && (
+            <p className="hint error">
+              구간이 많아 오래 걸리고 AI 사용료가 많이 듭니다. 처음에는 더 짧은 기간으로 해보세요.
+            </p>
+          )}
           {!llm && <p className="hint error">설정에서 API 키를 먼저 넣어주세요</p>}
           <button className="primary" disabled={!llm || selected.length === 0} onClick={() => void run(false)}>
             추출 시작
@@ -298,7 +329,7 @@ export function ImportWizard({
               />
             </div>
           ))}
-          <button className="primary" onClick={() => void save()}>
+          <button className="primary" disabled={saving} onClick={() => void save()}>
             저장
           </button>
         </>
@@ -309,7 +340,7 @@ export function ImportWizard({
           <p>
             가져오기를 마쳤습니다. 브라우저 데이터를 지우면 이 내용이 사라지니, 설정에서 백업을 내보내 두세요.
           </p>
-          <button className="primary" onClick={onDone}>
+          <button className="primary" onClick={close}>
             확인
           </button>
         </>
@@ -321,7 +352,7 @@ export function ImportWizard({
         </p>
       )}
       {step !== 'run' && step !== 'reminder' && (
-        <button className="link" onClick={onDone}>
+        <button className="link" onClick={close}>
           닫기
         </button>
       )}

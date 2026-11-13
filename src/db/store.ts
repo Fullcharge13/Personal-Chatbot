@@ -163,3 +163,18 @@ export async function wipeAll(): Promise<void> {
     await Promise.all(db.tables.map((t) => t.clear()));
   });
 }
+
+/** Saves an import result in one step: either the persona, its samples and memories all land, or none do. */
+export async function saveImport(a: {
+  targetId: string | null;
+  sheet: PersonaSheet;
+  speechSamples: string[];
+  memories: Omit<Memory, 'id' | 'personaId' | 'createdAt'>[];
+}): Promise<void> {
+  await db.transaction('rw', db.personas, db.memories, async () => {
+    let id = a.targetId;
+    if (id) await updatePersona(id, { ...a.sheet, speechSamples: a.speechSamples });
+    else id = (await createPersona(a.sheet, a.speechSamples)).id;
+    if (a.memories.length) await addMemories(id, a.memories);
+  });
+}

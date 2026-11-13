@@ -48,6 +48,8 @@ export interface ChatMessage {
   at: number;
   consolidated: boolean;
   failed?: boolean;
+  /** Set on a message the persona sent first, so an unanswered one is not followed by another. */
+  kind?: 'opener';
 }
 
 export interface Summary {

@@ -15,8 +15,7 @@ export async function exportBackup(): Promise<string> {
   return JSON.stringify(data);
 }
 
-/** Replaces all data with the backup. The API key already on the device is kept. */
-export async function importBackup(json: string): Promise<void> {
+function parseBackup(json: string): Record<string, unknown> {
   let data: Record<string, unknown>;
   try {
     data = JSON.parse(json);
@@ -30,6 +29,24 @@ export async function importBackup(json: string): Promise<void> {
     data.version === 1 &&
     TABLES.every((name) => Array.isArray(data[name]));
   if (!valid) throw new Error('BACKUP_INVALID');
+  return data;
+}
+
+/** What a backup holds, for showing before anything is replaced. */
+export function inspectBackup(json: string): { exportedAt: string; personas: number; messages: number; memories: number } {
+  const data = parseBackup(json);
+  const count = (name: string) => (data[name] as unknown[]).length;
+  return {
+    exportedAt: typeof data.exportedAt === 'string' ? data.exportedAt : '',
+    personas: count('personas'),
+    messages: count('messages'),
+    memories: count('memories'),
+  };
+}
+
+/** Replaces all data with the backup. The API key already on the device is kept. */
+export async function importBackup(json: string): Promise<void> {
+  const data = parseBackup(json);
 
   const current = await getSettings();
   const backed = (data.settings ?? {}) as { model?: unknown };

@@ -88,11 +88,39 @@ describe('openIfDue', () => {
     expect(fake.calls).toHaveLength(0);
   });
 
-  test('returns null when the last message is an unanswered persona message', async () => {
-    await s.addMessage({ personaId: pid, sender: 'persona', text: '뭐해?', at: NOW - 5 * HOUR });
+  test('returns null while an earlier opener is still unanswered', async () => {
+    expect(await openIfDue(pid, createFakeProvider(['뭐해?']), NOW)).toMatchObject({ kind: 'opener' });
     const fake = createFakeProvider(['x']);
-    expect(await openIfDue(pid, fake, NOW)).toBeNull();
+    expect(await openIfDue(pid, fake, NOW + 5 * HOUR)).toBeNull();
     expect(fake.calls).toHaveLength(0);
+  });
+
+  test('opens after a normal exchange that ended with a persona reply', async () => {
+    await s.addMessage({ personaId: pid, sender: 'user', text: '잘자', at: NOW - 3 * HOUR - 60_000 });
+    await s.addMessage({ personaId: pid, sender: 'persona', text: '응 잘자', at: NOW - 3 * HOUR });
+    expect(await openIfDue(pid, createFakeProvider(['잘 잤어?']), NOW)).toMatchObject({ text: '잘 잤어?' });
+    expect(await personaMessages()).toHaveLength(2);
+  });
+
+  test('discards the opener when the user sends a message while it is being generated', async () => {
+    await s.addThreads(pid, ['면접 결과']);
+    const llm = {
+      complete: async () => {
+        await s.addMessage({ personaId: pid, sender: 'user', text: '나 왔어', at: NOW + 500 });
+        return '면접 결과 나왔어?';
+      },
+      stream: async () => '',
+    };
+    expect(await openIfDue(pid, llm, NOW)).toBeNull();
+    expect(await personaMessages()).toHaveLength(0);
+    expect(await s.listOpenThreads(pid)).toHaveLength(1);
+  });
+
+  test('the opener is stamped after the last stored message', async () => {
+    await s.addMessage({ personaId: pid, sender: 'user', text: '미래에서 온 말', at: NOW + 10 * HOUR });
+    const m = await openIfDue(pid, createFakeProvider(['안녕']), NOW + 12 * HOUR);
+    expect(m!.at).toBeGreaterThan(NOW + 10 * HOUR);
+    expect((await s.listMessages(pid)).at(-1)!.id).toBe(m!.id);
   });
 
   test('llm failure saves nothing and leaves the thread open', async () => {

@@ -22,6 +22,7 @@ export function App({ llmFactory = createAnthropicProvider }: { llmFactory?: (s:
   const [ready, setReady] = useState(false);
   // Bumped when stored data is replaced wholesale (backup import, wipe) so screens reload.
   const [epoch, setEpoch] = useState(0);
+  const [locked, setLocked] = useState(false);
 
   const reload = useCallback(async () => {
     const s = await getSettings();
@@ -34,17 +35,29 @@ export function App({ llmFactory = createAnthropicProvider }: { llmFactory?: (s:
     void reload();
   }, [reload]);
 
+  // Everything lives in browser storage; ask the browser not to evict it under pressure.
+  useEffect(() => {
+    void navigator.storage?.persist?.().catch(() => {});
+  }, []);
+
   return (
     <div className="app">
       <main>
         {ready && tab === 'chat' && <ChatScreen key={epoch} llm={llm} onGoTo={setTab} />}
-        {ready && tab === 'persona' && <PersonaScreen key={epoch} llm={llm} />}
+        {ready && tab === 'persona' && <PersonaScreen key={epoch} llm={llm} onBusyChange={setLocked} />}
         {ready && tab === 'profile' && <ProfileScreen key={epoch} />}
         {ready && tab === 'settings' && <SettingsScreen onSaved={reload} />}
       </main>
+      {locked && <p className="lock-note">대화 파일을 가져오는 동안에는 다른 탭으로 갈 수 없습니다</p>}
       <nav role="tablist" className="tabs">
         {TABS.map((t) => (
-          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}>
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={tab === t.id}
+            disabled={locked && tab !== t.id}
+            onClick={() => setTab(t.id)}
+          >
             {t.label}
           </button>
         ))}

@@ -1,7 +1,8 @@
 import type { ParsedMessage } from '../../types';
 import { to24h, toLines } from './normalize';
 
-const TIME = '(오전|오후) (\\d{1,2}):(\\d{2})';
+// 오전/오후 or AM/PM may come before or after the time, or be absent (24-hour setting).
+const TIME = '(?:(오전|오후|AM|PM) )?(\\d{1,2}):(\\d{2})(?: (AM|PM))?';
 const ANDROID_PREFIX = new RegExp(`^(\\d{4})년 (\\d{1,2})월 (\\d{1,2})일 ${TIME}`);
 const IOS_PREFIX = new RegExp(`^(\\d{4})\\. (\\d{1,2})\\. (\\d{1,2})\\. ${TIME}`);
 const PC_SEPARATOR = /^-+ (\d{4})년 (\d{1,2})월 (\d{1,2})일 .*-+$/;
@@ -26,7 +27,8 @@ export function parseKakao(text: string): ParsedMessage[] | null {
   for (const line of toLines(text)) {
     const prefix = ANDROID_PREFIX.exec(line) ?? IOS_PREFIX.exec(line);
     if (prefix) {
-      const [whole, y, mo, d, ampm, h, mi] = prefix;
+      const [whole, y, mo, d, before, h, mi, after] = prefix;
+      const ampm = before ?? after;
       const rest = line.slice(whole.length);
       const msg = /^, (.+?) : (.*)$/.exec(rest);
       if (msg) {
@@ -46,7 +48,8 @@ export function parseKakao(text: string): ParsedMessage[] | null {
 
     const pc = pcDate ? PC_MESSAGE.exec(line) : null;
     if (pc && pcDate) {
-      const [, sender, ampm, h, mi, body] = pc;
+      const [, sender, before, h, mi, after, body] = pc;
+      const ampm = before ?? after;
       open(new Date(pcDate[0], pcDate[1], pcDate[2], to24h(ampm, +h), +mi), sender, body);
       continue;
     }

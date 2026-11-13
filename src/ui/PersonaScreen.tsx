@@ -14,7 +14,13 @@ const toSheet = (p: Persona): PersonaSheet => ({
   notes: p.notes,
 });
 
-export function PersonaScreen({ llm }: { llm: LlmProvider | null }) {
+export function PersonaScreen({
+  llm,
+  onBusyChange,
+}: {
+  llm: LlmProvider | null;
+  onBusyChange?: (busy: boolean) => void;
+}) {
   const [loaded, setLoaded] = useState(false);
   /** null while creating a new persona. */
   const [persona, setPersona] = useState<Persona | null>(null);
@@ -71,6 +77,7 @@ export function PersonaScreen({ llm }: { llm: LlmProvider | null }) {
         <ImportWizard
           llm={llm}
           target={persona}
+          onBusyChange={onBusyChange}
           onDone={() => {
             setImporting(false);
             void load();

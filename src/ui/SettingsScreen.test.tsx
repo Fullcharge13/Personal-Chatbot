@@ -62,7 +62,11 @@ test('importing a valid backup restores data and reports success', async () => {
   await s.wipeAll();
   const onSaved = vi.fn();
   render(<SettingsScreen onSaved={onSaved} />);
+  await s.createPersona(sheet('지울 사람'));
   await user.upload(await screen.findByLabelText('백업 가져오기'), new File([json], 'backup.json', { type: 'application/json' }));
+  expect(await screen.findByText(/인물 1명, 대화 0개, 기억 0개/)).toBeInTheDocument();
+  expect((await s.getActivePersona())!.name).toBe('지울 사람');
+  await user.click(screen.getByRole('button', { name: '이 백업으로 바꾸기' }));
   expect(await screen.findByText('백업을 불러왔습니다')).toBeInTheDocument();
   expect((await s.getActivePersona())!.name).toBe('지수');
   expect(onSaved).toHaveBeenCalled();
@@ -78,4 +82,17 @@ test('"전체 삭제" requires typing 삭제 before wiping', async () => {
   expect(button).toBeEnabled();
   await user.click(button);
   await waitFor(async () => expect(await s.getActivePersona()).toBeUndefined());
+});
+
+test('cancelling a picked backup changes nothing', async () => {
+  const user = userEvent.setup();
+  const { exportBackup } = await import('../db/backup');
+  await s.createPersona(sheet('지수'));
+  const json = await exportBackup();
+  await s.createPersona(sheet('철수'));
+  render(<SettingsScreen />);
+  await user.upload(await screen.findByLabelText('백업 가져오기'), new File([json], 'b.json', { type: 'application/json' }));
+  await user.click(await screen.findByRole('button', { name: '취소' }));
+  expect(screen.queryByRole('button', { name: '이 백업으로 바꾸기' })).not.toBeInTheDocument();
+  expect((await s.getActivePersona())!.name).toBe('철수');
 });

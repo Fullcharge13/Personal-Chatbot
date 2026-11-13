@@ -61,3 +61,15 @@ test('blank lines inside a multi-line message are preserved', () => {
 
 test('non-kakao text → null', () => expect(parseKakao('hello\nworld')).toBeNull());
 test('empty string → null', () => expect(parseKakao('')).toBeNull());
+
+test('24-hour exports without 오전/오후 parse (android, ios, pc)', () => {
+  expect(parseKakao('2024년 3월 4일 15:15, 지수 : 안녕')![0]).toEqual({ at: new Date(2024, 2, 4, 15, 15), sender: '지수', text: '안녕' });
+  expect(parseKakao('2024. 3. 4. 15:15, 지수 : 안녕')![0].at).toEqual(new Date(2024, 2, 4, 15, 15));
+  expect(parseKakao('--------------- 2024년 3월 4일 월요일 ---------------\n[지수] [15:15] 안녕')![0].at).toEqual(new Date(2024, 2, 4, 15, 15));
+});
+
+test('AM/PM markers parse before or after the time', () => {
+  expect(parseKakao('2024. 3. 4. 3:15 PM, 지수 : 안녕')![0].at).toEqual(new Date(2024, 2, 4, 15, 15));
+  expect(parseKakao('2024. 3. 4. PM 3:15, 지수 : 안녕')![0].at).toEqual(new Date(2024, 2, 4, 15, 15));
+  expect(parseKakao('--------------- 2024년 3월 4일 월요일 ---------------\n[지수] [3:15 PM] 안녕')![0].at).toEqual(new Date(2024, 2, 4, 15, 15));
+});

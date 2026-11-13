@@ -1,4 +1,4 @@
-import { exportBackup, importBackup } from './backup';
+import { exportBackup, importBackup, inspectBackup } from './backup';
 import * as s from './store';
 import { mem, sheet } from '../test-helpers';
 
@@ -65,4 +65,14 @@ test.each([
   await expect(importBackup(json)).rejects.toThrow('BACKUP_INVALID');
   expect((await s.getActivePersona())!.id).toBe(p.id);
   expect(await s.listMessages(p.id)).toHaveLength(1);
+});
+
+test('inspectBackup reports counts without touching stored data', async () => {
+  await seed();
+  const json = await exportBackup();
+  await s.wipeAll();
+  expect(inspectBackup(json)).toMatchObject({ personas: 1, messages: 1, memories: 1 });
+  expect(typeof inspectBackup(json).exportedAt).toBe('string');
+  expect(await s.getActivePersona()).toBeUndefined();
+  expect(() => inspectBackup('nope')).toThrow('BACKUP_INVALID');
 });

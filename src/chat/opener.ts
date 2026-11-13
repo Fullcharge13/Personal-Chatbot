@@ -81,7 +81,7 @@ async function run(personaId: string, llm: LlmProvider, now: number): Promise<Ch
   if (!persona || persona.id !== personaId) return null;
 
   const [last] = await store.listMessages(personaId, 1);
-  if (last?.sender === 'persona') return null; // an earlier opener is still unanswered
+  if (last?.kind === 'opener') return null; // an earlier opener is still unanswered
   if (!shouldOpen(last?.at, now)) return null;
 
   const opener = await generateOpener(
@@ -98,7 +98,17 @@ async function run(personaId: string, llm: LlmProvider, now: number): Promise<Ch
   );
   if (!opener) return null;
 
-  const message = await store.addMessage({ personaId, sender: 'persona', text: opener.text, at: now });
+  // The user may have started typing while the opener was being written; theirs comes first.
+  const [latest] = await store.listMessages(personaId, 1);
+  if (latest?.id !== last?.id) return null;
+
+  const message = await store.addMessage({
+    personaId,
+    sender: 'persona',
+    text: opener.text,
+    at: Math.max(now, (latest?.at ?? 0) + 1),
+    kind: 'opener',
+  });
   if (opener.usedThreadId) await store.markThreadUsed(opener.usedThreadId);
   return message;
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { exportBackup, importBackup } from '../db/backup';
+import { exportBackup, importBackup, inspectBackup } from '../db/backup';
 import { getSettings, saveSettings, wipeAll } from '../db/store';
 import { DEFAULT_MODEL } from '../types';
 import { readFileText } from './readFile';
@@ -10,6 +10,7 @@ export function SettingsScreen({ onSaved }: { onSaved?: () => void }) {
   const [loaded, setLoaded] = useState(false);
   const [notice, setNotice] = useState('');
   const [confirmText, setConfirmText] = useState('');
+  const [picked, setPicked] = useState<{ json: string; info: ReturnType<typeof inspectBackup> } | null>(null);
 
   useEffect(() => {
     getSettings().then((s) => {
@@ -36,13 +37,26 @@ export function SettingsScreen({ onSaved }: { onSaved?: () => void }) {
     a.href = url;
     a.download = `chatbot-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
-    URL.revokeObjectURL(url);
+    // Some mobile browsers start the download after this tick; revoking at once would cancel it.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
 
-  async function restore(file: File | undefined) {
+  async function pickBackup(file: File | undefined) {
     if (!file) return;
     try {
-      await importBackup(await readFileText(file));
+      const json = await readFileText(file);
+      setPicked({ json, info: inspectBackup(json) });
+      setNotice('');
+    } catch {
+      setPicked(null);
+      setNotice('백업 파일을 읽을 수 없습니다');
+    }
+  }
+
+  async function restore() {
+    if (!picked) return;
+    try {
+      await importBackup(picked.json);
       const s = await getSettings();
       setModel(s.model);
       setNotice('백업을 불러왔습니다');
@@ -50,6 +64,7 @@ export function SettingsScreen({ onSaved }: { onSaved?: () => void }) {
     } catch {
       setNotice('백업 파일을 읽을 수 없습니다');
     }
+    setPicked(null);
   }
 
   async function wipe() {
@@ -95,11 +110,26 @@ export function SettingsScreen({ onSaved }: { onSaved?: () => void }) {
           type="file"
           accept=".json,application/json"
           onChange={(e) => {
-            void restore(e.target.files?.[0]);
+            void pickBackup(e.target.files?.[0]);
             e.target.value = '';
           }}
         />
         <p className="hint">가져오면 지금 있는 데이터는 백업 내용으로 바뀝니다.</p>
+        {picked && (
+          <div className="notice">
+            <p>
+              {picked.info.exportedAt ? `${picked.info.exportedAt.slice(0, 10)}에 만든 백업입니다. ` : ''}
+              인물 {picked.info.personas}명, 대화 {picked.info.messages}개, 기억 {picked.info.memories}개. 지금 이 휴대폰에
+              있는 데이터는 모두 지워집니다.
+            </p>
+            <div className="row">
+              <button className="danger" onClick={() => void restore()}>
+                이 백업으로 바꾸기
+              </button>
+              <button onClick={() => setPicked(null)}>취소</button>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="card danger">

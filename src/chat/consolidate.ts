@@ -1,6 +1,7 @@
 import * as store from '../db/store';
 import { extractJson } from '../llm/json';
 import type { LlmProvider } from '../llm/provider';
+import type { ChatMessage } from '../types';
 
 const SYSTEM = [
   '아래는 사용자와 인물의 메신저 대화입니다. 다음 대화를 위해 기억할 것을 정리해 주세요.',
@@ -24,12 +25,21 @@ export function consolidate(personaId: string, llm: LlmProvider): Promise<'done'
   return job;
 }
 
+export const BATCH_SIZE = 60;
+
 async function run(personaId: string, llm: LlmProvider): Promise<'done' | 'nothing' | 'failed'> {
   const pending = (await store.listUnconsolidated(personaId)).filter((m) => !m.failed);
   if (pending.length === 0) return 'nothing';
+  // Small batches keep each reply well inside the output limit, so a long backlog cannot get stuck.
+  for (let i = 0; i < pending.length; i += BATCH_SIZE) {
+    if (!(await consolidateBatch(personaId, pending.slice(i, i + BATCH_SIZE), llm))) return 'failed';
+  }
+  return 'done';
+}
 
+async function consolidateBatch(personaId: string, batch: ChatMessage[], llm: LlmProvider): Promise<boolean> {
   const previous = (await store.getSummary(personaId))?.text ?? '';
-  const transcript = pending.map((m) => `${m.sender === 'user' ? '사용자' : '인물'}: ${m.text}`).join('\n');
+  const transcript = batch.map((m) => `${m.sender === 'user' ? '사용자' : '인물'}: ${m.text}`).join('\n');
 
   let reply: string;
   try {
@@ -39,11 +49,11 @@ async function run(personaId: string, llm: LlmProvider): Promise<'done' | 'nothi
       maxTokens: 1500,
     });
   } catch {
-    return 'failed';
+    return false;
   }
 
   const json = extractJson<Record<string, unknown>>(reply);
-  if (!json) return 'failed';
+  if (!json) return false;
 
   const memories = (Array.isArray(json.memories) ? json.memories : [])
     .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
@@ -57,10 +67,19 @@ async function run(personaId: string, llm: LlmProvider): Promise<'done' | 'nothi
   const threads = (Array.isArray(json.threads) ? json.threads : []).filter(
     (t): t is string => typeof t === 'string' && t.trim() !== '',
   );
+  const summary = typeof json.summary === 'string' ? json.summary.trim() : '';
 
-  if (typeof json.summary === 'string' && json.summary.trim()) await store.saveSummary(personaId, json.summary.trim());
-  if (memories.length) await store.addMemories(personaId, memories);
-  if (threads.length) await store.addThreads(personaId, threads);
-  await store.markConsolidated(pending.map((m) => m.id));
-  return 'done';
+  // One transaction: if the page is frozen or storage fails midway, nothing is half-written
+  // and the same messages are simply consolidated again next time.
+  try {
+    await store.db.transaction('rw', store.db.summaries, store.db.memories, store.db.threads, store.db.messages, async () => {
+      if (summary) await store.saveSummary(personaId, summary);
+      if (memories.length) await store.addMemories(personaId, memories);
+      if (threads.length) await store.addThreads(personaId, threads);
+      await store.markConsolidated(batch.map((m) => m.id));
+    });
+  } catch {
+    return false;
+  }
+  return true;
 }

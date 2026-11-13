@@ -94,3 +94,36 @@ test('concurrent calls for the same persona run the llm once', async () => {
   await Promise.all([consolidate(pid, fake), consolidate(pid, fake)]);
   expect(fake.calls).toHaveLength(1);
 });
+
+test('a long backlog is consolidated in batches of 60 messages', async () => {
+  for (let i = 0; i < 130; i++) await s.addMessage({ personaId: pid, sender: i % 2 ? 'persona' : 'user', text: `말${i}`, at: i });
+  const fake = createFakeProvider([reply({ summary: 's1' }), reply({ summary: 's2' }), reply({ summary: 's3' })]);
+  expect(await consolidate(pid, fake)).toBe('done');
+  expect(fake.calls).toHaveLength(3);
+  const lines = (i: number) => fake.calls[i].messages[0].content.split('새 대화:\n')[1].split('\n').length;
+  expect([lines(0), lines(1), lines(2)]).toEqual([60, 60, 10]);
+  expect(fake.calls[1].messages[0].content).toContain('s1');
+  expect(await s.listUnconsolidated(pid)).toHaveLength(0);
+  expect((await s.getSummary(pid))!.text).toBe('s3');
+});
+
+test('a failing batch keeps the batches already done', async () => {
+  for (let i = 0; i < 130; i++) await s.addMessage({ personaId: pid, sender: 'user', text: `말${i}`, at: i });
+  const fake = createFakeProvider([reply({ summary: 's1' }), new LlmError('network', 'x')]);
+  expect(await consolidate(pid, fake)).toBe('failed');
+  expect(await s.listUnconsolidated(pid)).toHaveLength(70);
+  expect((await s.getSummary(pid))!.text).toBe('s1');
+});
+
+test('writes are all-or-nothing: a storage failure leaves no partial memories or summary', async () => {
+  await seed();
+  const spy = vi.spyOn(s.db.threads, 'bulkAdd').mockRejectedValue(new Error('disk'));
+  const fake = createFakeProvider([
+    reply({ summary: '새 요약', memories: [{ text: '기억', keywords: [] }], threads: ['화제'] }),
+  ]);
+  expect(await consolidate(pid, fake)).toBe('failed');
+  spy.mockRestore();
+  expect(await s.listMemories(pid)).toHaveLength(0);
+  expect(await s.getSummary(pid)).toBeUndefined();
+  expect(await s.listUnconsolidated(pid)).toHaveLength(2);
+});

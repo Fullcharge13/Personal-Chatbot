@@ -254,3 +254,20 @@ test('a storage quota error shows the backup advice and keeps the typed text', a
   expect(await screen.findByText('저장 공간이 부족합니다. 설정에서 백업을 내보내주세요')).toBeInTheDocument();
   expect(screen.getByLabelText('메시지')).toHaveValue('저장 안 되는 말');
 });
+
+test('renders the latest 200 messages with a button to show older ones', async () => {
+  const user = userEvent.setup();
+  await s.db.messages.bulkAdd(
+    Array.from({ length: 250 }, (_, i) => ({
+      id: `bulk${i}`, personaId: pid, sender: i % 2 ? ('persona' as const) : ('user' as const),
+      text: `옛말${i}`, at: NOW - 60_000 - (250 - i), consolidated: true,
+    })),
+  );
+  const { container } = render(<ChatScreen llm={createFakeProvider([])} now={now} />);
+  await screen.findByText('옛말249');
+  expect(container.querySelectorAll('.bubble')).toHaveLength(200);
+  expect(screen.queryByText('옛말49')).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: '이전 대화 더 보기' }));
+  expect(container.querySelectorAll('.bubble')).toHaveLength(250);
+  expect(screen.queryByRole('button', { name: '이전 대화 더 보기' })).not.toBeInTheDocument();
+});

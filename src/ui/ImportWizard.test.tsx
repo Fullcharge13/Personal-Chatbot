@@ -217,3 +217,41 @@ test('after the first successful import shows the backup reminder once', async (
   await waitFor(() => expect(second.onDone).toHaveBeenCalled());
   expect(screen.queryByText(/설정에서 백업을 내보내 두세요/)).not.toBeInTheDocument();
 });
+
+test('a storage failure on save shows the backup advice and saves nothing', async () => {
+  const user = userEvent.setup();
+  const onDone = vi.fn();
+  render(<ImportWizard llm={createFakeProvider([chunkReply, mergeReply])} target={null} onDone={onDone} now={NOW} />);
+  await toPeriodStep(user);
+  await user.click(screen.getByRole('button', { name: '추출 시작' }));
+  await screen.findByLabelText('이름');
+  const spy = vi.spyOn(s.db.memories, 'bulkAdd').mockRejectedValue(new DOMException('full', 'QuotaExceededError'));
+  await user.click(screen.getByRole('button', { name: '저장' }));
+  expect(await screen.findByText('저장 공간이 부족합니다. 설정에서 백업을 내보내주세요')).toBeInTheDocument();
+  spy.mockRestore();
+  expect(await s.db.personas.count()).toBe(0);
+  expect(onDone).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('이름')).toHaveValue('홍길동');
+});
+
+test('warns when the export needs more than 30 chunks', async () => {
+  const user = userEvent.setup();
+  render(<ImportWizard llm={createFakeProvider([])} target={null} onDone={() => {}} now={NOW} />);
+  await toPeriodStep(user, bigExport(Math.ceil((CHUNK_CHARS * 31) / 120)));
+  expect(screen.getByText(/구간이 많아 오래 걸리고 AI 사용료가 많이 듭니다/)).toBeInTheDocument();
+});
+
+test('reports busy while extracting and reviewing, and idle again when closed', async () => {
+  const user = userEvent.setup();
+  const busy: boolean[] = [];
+  render(
+    <ImportWizard llm={createFakeProvider([chunkReply, mergeReply])} target={null} onDone={() => {}} onBusyChange={(b) => busy.push(b)} now={NOW} />,
+  );
+  await toPeriodStep(user);
+  expect(busy.at(-1)).toBe(false);
+  await user.click(screen.getByRole('button', { name: '추출 시작' }));
+  await screen.findByLabelText('이름');
+  expect(busy.at(-1)).toBe(true);
+  await user.click(screen.getByRole('button', { name: '닫기' }));
+  expect(busy.at(-1)).toBe(false);
+});
