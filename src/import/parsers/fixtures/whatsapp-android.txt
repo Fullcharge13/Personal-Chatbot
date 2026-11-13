@@ -1,0 +1,8 @@
+1/3/24, 14:10 - Messages and calls are end-to-end encrypted. No one outside of this chat, not even WhatsApp, can read or listen to them.
+1/3/24, 14:15 - 홍길동: 안녕
+1/3/24, 14:16 - 나: 응 안녕
+1/3/24, 14:17 - 홍길동: <Media omitted>
+1/3/24, 14:18 - 홍길동: 첫 줄
+둘째 줄
+셋째 줄
+2/3/24, 09:05 - 나: 좋은 아침
