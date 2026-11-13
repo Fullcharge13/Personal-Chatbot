@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 import {
   DEFAULT_MODEL,
+  DEFAULT_MODELS,
   LIMITS,
   PROFILE_KEYS,
   type ChatMessage,
@@ -8,12 +9,15 @@ import {
   type Persona,
   type PersonaSheet,
   type ProfileEntry,
+  type Provider,
   type Settings,
   type Summary,
   type Thread,
 } from '../types';
 
-type SettingsRow = Settings & { id: 'main' };
+type ProviderSettings = { apiKey: string; model: string };
+/** The active provider's values, plus what was last saved for each provider so switching back restores it. */
+type SettingsRow = Settings & { id: 'main'; saved?: Partial<Record<Provider, ProviderSettings>> };
 type ProfileRow = { key: string; text: string };
 
 class AppDb extends Dexie {
@@ -51,7 +55,21 @@ export async function getSettings(): Promise<Settings> {
 }
 
 export async function saveSettings(s: Settings): Promise<void> {
-  await db.settings.put({ ...s, id: 'main' });
+  const row = await db.settings.get('main');
+  const saved = { ...savedOf(row), [s.provider]: { apiKey: s.apiKey, model: s.model } };
+  await db.settings.put({ ...s, id: 'main', saved });
+}
+
+function savedOf(row: SettingsRow | undefined): Partial<Record<Provider, ProviderSettings>> {
+  if (!row) return {};
+  // rows written before providers existed carry only the active values
+  return { [row.provider]: { apiKey: row.apiKey, model: row.model }, ...row.saved };
+}
+
+/** What was last saved for a provider, or an empty key with that provider's default model. */
+export async function getProviderSettings(provider: Provider): Promise<ProviderSettings> {
+  const saved = savedOf(await db.settings.get('main'))[provider];
+  return saved ?? { apiKey: '', model: DEFAULT_MODELS[provider] };
 }
 
 export async function getProfile(): Promise<ProfileEntry[]> {

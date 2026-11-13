@@ -64,9 +64,12 @@ export interface ProfileEntry {
   text: string;
 }
 
+export type Provider = 'anthropic' | 'google';
+
+/** The provider in use, with its key and model. */
 export interface Settings {
   apiKey: string;
-  provider: 'anthropic';
+  provider: Provider;
   model: string;
 }
 
@@ -77,7 +80,16 @@ export const LIMITS = {
   openerGapMs: 3_600_000,
 } as const;
 
-export const DEFAULT_MODEL = 'claude-sonnet-5-5';
+export const DEFAULT_MODELS: Record<Provider, string> = {
+  anthropic: 'claude-sonnet-5-5',
+  google: 'gemini-3.8-flash',
+};
+export const DEFAULT_MODEL = DEFAULT_MODELS.anthropic;
+
+export const PROVIDERS: { id: Provider; label: string; keyHint: string }[] = [
+  { id: 'anthropic', label: 'Anthropic (Claude)', keyHint: 'sk-ant-...' },
+  { id: 'google', label: 'Google (Gemini)', keyHint: 'Google AI Studio에서 발급한 키' },
+];
 
 export const PROFILE_KEYS = [
   { key: 'basic', label: '기본 정보' },
